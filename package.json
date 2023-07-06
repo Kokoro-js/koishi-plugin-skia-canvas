@@ -1,0 +1,39 @@
+{
+  "name": "koishi-plugin-skia-canvas",
+  "description": "Provide safe canvas with Koishi",
+  "version": "0.1.0",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ahdg6/koishi-plugin-skia-canvas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ahdg6/koishi-plugin-skia-canvas/issues"
+  },
+  "koishi": {
+    "description": {
+      "zh": "为 Koishi 提供 Canvas(skia-canvas) 环境。"
+    }
+  },
+  "license": "AGPL-3.0-or-later",
+  "keywords": [
+    "canvas",
+    "koishi",
+    "service"
+  ],
+  "peerDependencies": {
+    "koishi": "^4.13.6"
+  },
+  "dependencies": {
+    "@ahdg/canvas": "^0.1.41",
+    "nodejs-file-downloader": "^4.12.1"
+  },
+  "devDependencies": {
+    "prettier": "^3.0.0"
+  }
+}
