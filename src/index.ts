@@ -89,13 +89,13 @@ export class Canvas extends Service {
     try {
       nativeBinding = await getNativeBinding(nodeDir);
     } catch (e) {
-      logger.error(e);
       if (e instanceof UnsupportedError) {
-        console.error('Canvas 目前不支持你的系统');
+        logger.error('Canvas 目前不支持你的系统');
       }
       if (e instanceof DownloadError) {
-        console.error('下载二进制文件遇到错误，请查看日志获取更详细信息');
+        logger.error('下载二进制文件遇到错误，请查看日志获取更详细信息');
       }
+      throw e;
     }
     ({
       clearAllCache: this.clearAllCache,
@@ -117,8 +117,24 @@ export class Canvas extends Service {
       loadImage: this.loadImage,
     } = nativeBinding);
 
-    this.GlobalFonts.registerFromPath(fontDir);
     logger.success('Canvas 加载成功');
+
+    await new Downloader({
+      url: 'http://file.tartaros.fun/files/64c8ed3d59f04/LXGWWenKaiLite-Regular.ttf',
+      directory: fontDir,
+      skipExistingFileName: true,
+      onProgress: function (percentage, _chunk, remainingSize) {
+        //Gets called with each chunk.
+        logger.info(
+          `LXGW: ${percentage} % Remaining(MB): ${remainingSize / 1024 / 1024}`,
+        );
+      },
+    }).download();
+    logger.success(
+      `已加载来自目录 ${fontDir} 的 ${this.GlobalFonts.loadFontsFromDir(
+        fontDir,
+      )} 个字体`,
+    );
   }
 }
 
@@ -239,7 +255,7 @@ async function getNativeBinding(nodeDir) {
     if (!localFileExisted) await handleFile(nodeDir, nodeName);
     nativeBinding = require('@ahdg/canvas');
   } catch (e) {
-    logger.error('在处理二进制文件时遇到了错误', e);
+    logger.error('An error was encountered while processing the binary', e);
     if (e instanceof DownloadError) {
       throw e;
     }
@@ -267,14 +283,14 @@ async function handleFile(nodeDir: string, nodeName: string) {
   const downloader = new Downloader({
     url: tarballUrl,
     directory: nodeDir,
-    onProgress: function (percentage, chunk, remainingSize) {
+    onProgress: function (percentage, _chunk, remainingSize) {
       //Gets called with each chunk.
       logger.info(
         `${percentage} % Remaining(MB): ${remainingSize / 1024 / 1024}`,
       );
     },
   });
-  logger.info('开始下载二进制文件');
+  logger.info('Start downloading the Canvas binaries');
   try {
     const { filePath, downloadStatus } = await downloader.download();
     if (downloadStatus === 'COMPLETE') {
@@ -312,14 +328,19 @@ export namespace Canvas {
         filters: ['directory'],
         allowCreate: true,
       })
-        .description('Canvas 二进制文件存放目录')
+        .description('Canvas binary file storage directory')
         .default('node-rs/canvas'),
       fontPath: Schema.path({
         filters: ['directory'],
         allowCreate: true,
       })
-        .description('自定义字体存放目录')
+        .description('Canvas custom font storage directory')
         .default('node-rs/canvas/font'),
+    }).i18n({
+      zh: {
+        nodeBinaryPath: 'Canvas 自定义字体存放目录',
+        fontPath: 'Canvas 自定义字体存放目录',
+      },
     }),
   ]) as Schema<Config>;
 }
