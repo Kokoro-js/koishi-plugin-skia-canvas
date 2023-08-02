@@ -2,9 +2,9 @@ import { Context, Logger, Schema, Service } from 'koishi';
 import path from 'path';
 import { mkdir } from 'fs/promises';
 import fs from 'fs';
-import tar from 'tar';
-import zlib from 'zlib';
 import Downloader from 'nodejs-file-downloader';
+import { handleFile, DownloadError } from './downloader';
+
 import type {
   FillType,
   Canvas as NativeCanvas,
@@ -22,6 +22,7 @@ import type {
   DOMMatrix,
   DOMPoint,
 } from '@ahdg/canvas';
+import * as url from 'url';
 
 export const name = 'canvas';
 const logger = new Logger(name);
@@ -65,18 +66,64 @@ export class Canvas extends Service {
   DOMMatrix: DOMMatrix;
   DOMRect: DOMRect;
 
+  private fontsArray: string[];
+
+  getFonts() {
+    return this.fontsArray;
+  }
+
   constructor(
     ctx: Context,
     public config: Canvas.Config,
   ) {
     super(ctx, 'canvas');
 
-    ctx.command('canvas').action(async () => {
+    ctx.i18n.define('zh', require('./locales/zh-CN'));
+    ctx.command('canvas').action(async ({ session }) => {
       return (
-        'Canvas 已加载字体：\n' +
+        session.text('.loaded-fonts') +
         this.GlobalFonts.families.map((obj) => obj.family).join(', ')
       );
     });
+
+    ctx
+      .command('canvas/registerFont <fontUrl:string>', { authority: 4 })
+      .action(async (_, fontUrl) => {
+        const fontDir = path.resolve(this.ctx.baseDir, config.fontPath);
+        const parsedUrl = new url.URL(fontUrl);
+        if (
+          !(
+            parsedUrl.pathname.endsWith('.otf') ||
+            parsedUrl.pathname.endsWith('.ttf')
+          )
+        ) {
+          return 'File is not an OpenType or TrueType format.';
+        }
+        const fontDownloader = new Downloader({
+          url: fontUrl,
+          directory: fontDir,
+          skipExistingFileName: true,
+          onProgress: function (percentage, _chunk, remainingSize) {
+            //Gets called with each chunk.
+            logger.info(
+              `LXGW: ${percentage} % Remaining(MB): ${
+                remainingSize / 1024 / 1024
+              }`,
+            );
+          },
+        });
+        try {
+          const { filePath } = await fontDownloader.download();
+          this.GlobalFonts.registerFromPath(filePath);
+          const loadedFonts = this.GlobalFonts.families.map(
+            (obj) => obj.family,
+          );
+          this.fontsArray.unshift(loadedFonts[loadedFonts.length - 1]);
+          this.ctx.schema.set('fonts', Schema.union(this.getFonts()));
+        } catch (e) {
+          return `注册字体失败, ${e}`;
+        }
+      });
   }
 
   async start() {
@@ -119,9 +166,19 @@ export class Canvas extends Service {
 
     logger.success('Canvas 加载成功');
 
-    await new Downloader({
+    this.fontsArray = this.GlobalFonts.families.map((obj) => obj.family);
+    this.ctx.schema.set('fonts', Schema.union(this.getFonts()));
+
+    this.loadExtraFonts(fontDir).catch((e) =>
+      logger.error('加载额外字体遇到了错误', e),
+    );
+  }
+
+  async loadExtraFonts(fontDir: string) {
+    const downloadFontTask = new Downloader({
       url: 'http://file.tartaros.fun/files/64c8ed3d59f04/LXGWWenKaiLite-Regular.ttf',
       directory: fontDir,
+      // Avoid download when exist
       skipExistingFileName: true,
       onProgress: function (percentage, _chunk, remainingSize) {
         //Gets called with each chunk.
@@ -130,39 +187,56 @@ export class Canvas extends Service {
         );
       },
     }).download();
-    logger.success(
-      `已加载来自目录 ${fontDir} 的 ${this.GlobalFonts.loadFontsFromDir(
-        fontDir,
-      )} 个字体`,
-    );
+
+    await downloadFontTask; // wait until the font is downloaded
+
+    const extraFontNum = this.GlobalFonts.loadFontsFromDir(fontDir);
+    logger.success(`已加载来自目录 ${fontDir} 的 ${extraFontNum} 个字体`);
+
+    // 把额外加载的字体提前
+    const fonts = this.GlobalFonts.families.map((obj) => obj.family);
+    this.fontsArray = fonts
+      .slice(-extraFontNum)
+      .concat(fonts.slice(0, -extraFontNum));
+    this.ctx.schema.set('fonts', Schema.union(this.getFonts()));
   }
 }
 
-function isMusl() {
-  // For Node 10
-  if (!process.report || typeof process.report.getReport !== 'function') {
-    try {
-      const lddPath = require('child_process')
-        .execSync('which ldd')
-        .toString()
-        .trim();
-      return fs.readFileSync(lddPath, 'utf8').includes('musl');
-    } catch (e) {
-      return true;
-    }
-  } else {
-    const report: { header: any } = process.report.getReport() as unknown as {
-      header: any;
-    };
-    const glibcVersionRuntime = report.header?.glibcVersionRuntime;
-    return !glibcVersionRuntime;
+export namespace Canvas {
+  export interface Config {
+    nodeBinaryPath: string;
+    fontPath: string;
   }
+  export const Config = Schema.intersect([
+    Schema.object({
+      nodeBinaryPath: Schema.path({
+        filters: ['directory'],
+        allowCreate: true,
+      })
+        .description('Canvas binary file storage directory')
+        .default('node-rs/canvas'),
+      fontPath: Schema.path({
+        filters: ['directory'],
+        allowCreate: true,
+      })
+        .description('Canvas custom font storage directory')
+        .default('node-rs/canvas/font'),
+    }).i18n({
+      zh: {
+        nodeBinaryPath: 'Canvas 自定义字体存放目录',
+        fontPath: 'Canvas 自定义字体存放目录',
+      },
+    }),
+  ]) as Schema<Config>;
 }
 
-async function getNativeBinding(nodeDir) {
+Context.service('canvas', Canvas);
+export default Canvas;
+
+async function getNativeBinding(nodeDir: string) {
   const { platform, arch } = process;
-  let nativeBinding;
-  let nodeName;
+  let nativeBinding: any;
+  let nodeName: string;
   switch (platform) {
     case 'android':
       switch (arch) {
@@ -252,7 +326,7 @@ async function getNativeBinding(nodeDir) {
   const localFileExisted = fs.existsSync(nodePath);
   global.GLOBAL_NATIVE_BINDING_PATH = nodePath;
   try {
-    if (!localFileExisted) await handleFile(nodeDir, nodeName);
+    if (!localFileExisted) await handleFile(nodeDir, nodeName, logger);
     nativeBinding = require('@ahdg/canvas');
   } catch (e) {
     logger.error('An error was encountered while processing the binary', e);
@@ -264,98 +338,29 @@ async function getNativeBinding(nodeDir) {
   return nativeBinding;
 }
 
-async function handleFile(nodeDir: string, nodeName: string) {
-  const url = `https://registry.npmjs.org/@napi-rs/${nodeName.replace(
-    'skia.',
-    'canvas-',
-  )}/latest`;
-  let data;
-  try {
-    const response = await fetch(url);
-    data = await response.json();
-  } catch (e) {
-    logger.error(`Failed to fetch from URL: ${url}`, e);
-    throw new DownloadError(`Failed to fetch from URL: ${e.message}`);
-  }
-  const tarballUrl = data.dist.tarball;
-  if (!tarballUrl) throw new DownloadError('Failed to get File url');
-
-  const downloader = new Downloader({
-    url: tarballUrl,
-    directory: nodeDir,
-    onProgress: function (percentage, _chunk, remainingSize) {
-      //Gets called with each chunk.
-      logger.info(
-        `${percentage} % Remaining(MB): ${remainingSize / 1024 / 1024}`,
-      );
-    },
-  });
-  logger.info('Start downloading the Canvas binaries');
-  try {
-    const { filePath, downloadStatus } = await downloader.download();
-    if (downloadStatus === 'COMPLETE') {
-      await extract(path.resolve(filePath));
-      logger.success(`File downloaded successfully at ${filePath}`);
-    } else {
-      throw new DownloadError('Download was aborted');
+function isMusl() {
+  // For Node 10
+  if (!process.report || typeof process.report.getReport !== 'function') {
+    try {
+      const lddPath = require('child_process')
+        .execSync('which ldd')
+        .toString()
+        .trim();
+      return fs.readFileSync(lddPath, 'utf8').includes('musl');
+    } catch (e) {
+      return true;
     }
-  } catch (e) {
-    logger.error('Failed to download the file', e);
-    throw new DownloadError(`Failed to download the binary file: ${e.message}`);
+  } else {
+    const report: { header: any } = process.report.getReport() as unknown as {
+      header: any;
+    };
+    const glibcVersionRuntime = report.header?.glibcVersionRuntime;
+    return !glibcVersionRuntime;
   }
 }
 
-const extract = async (filePath: string) => {
-  const outputDir = path.dirname(filePath);
-  const readStream = fs.createReadStream(filePath);
-  const gunzip = zlib.createGunzip();
-  const extractStream = tar.extract({ cwd: outputDir });
-  readStream.pipe(gunzip).pipe(extractStream);
-  return new Promise<void>((resolve, reject) => {
-    extractStream.on('finish', resolve);
-    extractStream.on('error', reject);
-  });
-};
-
-export namespace Canvas {
-  export interface Config {
-    nodeBinaryPath: string;
-    fontPath: string;
-  }
-  export const Config = Schema.intersect([
-    Schema.object({
-      nodeBinaryPath: Schema.path({
-        filters: ['directory'],
-        allowCreate: true,
-      })
-        .description('Canvas binary file storage directory')
-        .default('node-rs/canvas'),
-      fontPath: Schema.path({
-        filters: ['directory'],
-        allowCreate: true,
-      })
-        .description('Canvas custom font storage directory')
-        .default('node-rs/canvas/font'),
-    }).i18n({
-      zh: {
-        nodeBinaryPath: 'Canvas 自定义字体存放目录',
-        fontPath: 'Canvas 自定义字体存放目录',
-      },
-    }),
-  ]) as Schema<Config>;
-}
-
-Context.service('canvas', Canvas);
-export default Canvas;
-
-class DownloadError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'DownloadError';
-  }
-}
 class UnsupportedError extends Error {
-  constructor(message) {
+  constructor(message: string) {
     super(message);
     this.name = 'UnsupportedError';
   }

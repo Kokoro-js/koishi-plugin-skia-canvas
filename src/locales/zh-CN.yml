@@ -1,0 +1,10 @@
+commands:
+  canvas:
+    description: 返回 Canvas 加载好的字体
+    messages:
+      loaded-fonts: 'Canvas 已加载的字体 \n'
+
+  canvas/registerFont:
+    description: 为 Canvas 注册新字体
+    usage: |-
+      canvas.registerFont https://github.com/lxgw/LxgwWenKai/releases/download/v1.300/LXGWWenKai-Regular.ttf
