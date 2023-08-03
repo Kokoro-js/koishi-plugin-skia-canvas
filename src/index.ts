@@ -2,8 +2,7 @@ import { Context, Logger, Schema, Service } from 'koishi';
 import path from 'path';
 import { mkdir } from 'fs/promises';
 import fs from 'fs';
-import Downloader from 'nodejs-file-downloader';
-import { handleFile, DownloadError } from './downloader';
+import { handleFile, DownloadError, downloadFonts } from './downloader';
 
 import type {
   FillType,
@@ -22,6 +21,7 @@ import type {
   DOMMatrix,
   DOMPoint,
 } from '@ahdg/canvas';
+
 import * as url from 'url';
 
 export const name = 'canvas';
@@ -67,9 +67,14 @@ export class Canvas extends Service {
   DOMRect: DOMRect;
 
   private fontsArray: string[];
+  private presetFont: string;
 
   getFonts() {
     return this.fontsArray;
+  }
+
+  getPresetFont() {
+    return this.presetFont;
   }
 
   constructor(
@@ -79,49 +84,37 @@ export class Canvas extends Service {
     super(ctx, 'canvas');
 
     ctx.i18n.define('zh', require('./locales/zh-CN'));
-    ctx.command('canvas').action(async ({ session }) => {
-      return (
-        session.text('.loaded-fonts') +
-        this.GlobalFonts.families.map((obj) => obj.family).join(', ')
-      );
-    });
+    ctx
+      .command('canvas')
+      .option('refresh', '-r')
+      .action(async ({ session, options }) => {
+        if (options.refresh) {
+          this.fontsArray = this.GlobalFonts.families.map((obj) => obj.family);
+        }
+        return session.text('.loaded-fonts') + this.fontsArray.join(', ');
+      });
 
     ctx
       .command('canvas/registerFont <fontUrl:string>', { authority: 4 })
-      .action(async (_, fontUrl) => {
+      .action(async ({ session }, fontUrl) => {
         const fontDir = path.resolve(this.ctx.baseDir, config.fontPath);
         const parsedUrl = new url.URL(fontUrl);
-        if (
-          !(
-            parsedUrl.pathname.endsWith('.otf') ||
-            parsedUrl.pathname.endsWith('.ttf')
-          )
-        ) {
-          return 'File is not an OpenType or TrueType format.';
+        const endings = ['.otf', '.ttf', '.tgz', 'tar.gz'];
+        if (!endings.some((ending) => parsedUrl.pathname.endsWith(ending))) {
+          return session.text('.not-downloadable-type');
         }
-        const fontDownloader = new Downloader({
-          url: fontUrl,
-          directory: fontDir,
-          skipExistingFileName: true,
-          onProgress: function (percentage, _chunk, remainingSize) {
-            //Gets called with each chunk.
-            logger.info(
-              `LXGW: ${percentage} % Remaining(MB): ${
-                remainingSize / 1024 / 1024
-              }`,
-            );
-          },
-        });
+
         try {
-          const { filePath } = await fontDownloader.download();
-          this.GlobalFonts.registerFromPath(filePath);
+          await downloadFonts(fontDir, fontUrl, logger);
+          this.GlobalFonts.registerFromPath(fontDir);
           const loadedFonts = this.GlobalFonts.families.map(
             (obj) => obj.family,
           );
           this.fontsArray.unshift(loadedFonts[loadedFonts.length - 1]);
-          this.ctx.schema.set('fonts', Schema.union(this.getFonts()));
         } catch (e) {
-          return `注册字体失败, ${e}`;
+          if (e instanceof DownloadError)
+            return `${session.text('download-fail')}：${e}`;
+          return `${session.text('load-fail')}：${e}`;
         }
       });
   }
@@ -167,38 +160,48 @@ export class Canvas extends Service {
     logger.success('Canvas 加载成功');
 
     this.fontsArray = this.GlobalFonts.families.map((obj) => obj.family);
-    this.ctx.schema.set('fonts', Schema.union(this.getFonts()));
 
     this.loadExtraFonts(fontDir).catch((e) =>
       logger.error('加载额外字体遇到了错误', e),
     );
   }
 
-  async loadExtraFonts(fontDir: string) {
-    const downloadFontTask = new Downloader({
-      url: 'http://file.tartaros.fun/files/64c8ed3d59f04/LXGWWenKaiLite-Regular.ttf',
-      directory: fontDir,
-      // Avoid download when exist
-      skipExistingFileName: true,
-      onProgress: function (percentage, _chunk, remainingSize) {
-        //Gets called with each chunk.
-        logger.info(
-          `LXGW: ${percentage} % Remaining(MB): ${remainingSize / 1024 / 1024}`,
-        );
-      },
-    }).download();
-
-    await downloadFontTask; // wait until the font is downloaded
-
+  private async loadExtraFonts(fontDir: string) {
     const extraFontNum = this.GlobalFonts.loadFontsFromDir(fontDir);
-    logger.success(`已加载来自目录 ${fontDir} 的 ${extraFontNum} 个字体`);
 
+    const defaultfont = 'lxgw-wenkai-lite-v1.300';
+    if (!fs.existsSync(path.join(fontDir, `${defaultfont}.tar.gz`))) {
+      try {
+        await downloadFonts(
+          fontDir,
+          'http://file.tartaros.fun/files/64cb5229d636e/lxgw-wenkai-lite-v1.300.tar.gz',
+          logger,
+        );
+      } catch (e) {
+        logger.error(
+          '下载预设字体遇到错误，这意味着我们无法保证在特殊系统上能渲染中文等字符。',
+        );
+        logger.success(
+          `已加载来自目录 ${fontDir} 的 ${extraFontNum} 个字体，但我们无法为您提供预设字体 ${defaultfont}。`,
+        );
+        return;
+      }
+    }
+
+    const defaultFontNum = this.GlobalFonts.loadFontsFromDir(
+      path.join(fontDir, defaultfont),
+    );
+
+    logger.success(
+      `已加载来自目录 ${fontDir} 的 ${extraFontNum} 个字体，其中预载了 ${defaultfont} 的 ${defaultFontNum} 个字体。`,
+    );
+
+    this.presetFont = 'LXGW WenKai Lite';
     // 把额外加载的字体提前
     const fonts = this.GlobalFonts.families.map((obj) => obj.family);
     this.fontsArray = fonts
-      .slice(-extraFontNum)
-      .concat(fonts.slice(0, -extraFontNum));
-    this.ctx.schema.set('fonts', Schema.union(this.getFonts()));
+      .slice(-(extraFontNum + defaultFontNum))
+      .concat(fonts.slice(0, -(extraFontNum + defaultFontNum)));
   }
 }
 

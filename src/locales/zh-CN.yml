@@ -2,9 +2,13 @@ commands:
   canvas:
     description: 返回 Canvas 加载好的字体
     messages:
-      loaded-fonts: 'Canvas 已加载的字体 \n'
+      loaded-fonts: 'Canvas 已加载的字体：'
 
   canvas/registerFont:
     description: 为 Canvas 注册新字体
     usage: |-
       canvas.registerFont https://github.com/lxgw/LxgwWenKai/releases/download/v1.300/LXGWWenKai-Regular.ttf
+    messages:
+      not-downloadable-type: '你要下载的文件后缀不是 otf，ttf，tar.gz，tgz 中的一个。'
+      download-fail: '下载字体失败'
+      load-fail: '加载字体失败'

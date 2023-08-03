@@ -4,7 +4,7 @@ import tar from 'tar';
 import zlib from 'zlib';
 import fs from 'fs';
 import path from 'path';
-import {Logger} from "koishi";
+import { Logger } from 'koishi';
 
 export class DownloadError extends Error {
   constructor(message: string) {
@@ -13,7 +13,11 @@ export class DownloadError extends Error {
   }
 }
 
-export async function handleFile(nodeDir: string, nodeName: string, logger: Logger) {
+export async function handleFile(
+  nodeDir: string,
+  nodeName: string,
+  logger: Logger,
+) {
   const url = `https://registry.npmjs.org/@napi-rs/${nodeName.replace(
     'skia.',
     'canvas-',
@@ -54,6 +58,42 @@ export async function handleFile(nodeDir: string, nodeName: string, logger: Logg
   }
 }
 
+export async function downloadFonts(
+  fontDir: string,
+  fontUrl: string,
+  logger: Logger,
+) {
+  const downloadFontTask = new Downloader({
+    url: fontUrl,
+    directory: fontDir,
+    // Avoid download when exist
+    skipExistingFileName: true,
+    onProgress: function (percentage, _chunk, remainingSize) {
+      //Gets called with each chunk.
+      logger.info(
+        `Font Downloader: ${percentage} % Remaining(MB): ${
+          remainingSize / 1024 / 1024
+        }`,
+      );
+    },
+  });
+
+  try {
+    const { filePath, downloadStatus } = await downloadFontTask.download();
+    if (downloadStatus === 'COMPLETE') {
+      if (filePath.endsWith('tar.gz') || filePath.endsWith('tgz')) {
+        await extract(path.resolve(filePath));
+      }
+      logger.success(`File downloaded successfully at ${filePath}`);
+    } else {
+      throw new DownloadError('Download was aborted');
+    }
+  } catch (e) {
+    logger.error('Failed to download the file', e);
+    throw new DownloadError(`Failed to download the font: ${e.message}`);
+  }
+}
+
 /**
  * Extracts a .tgz file downloaded from npm to the directory of the file.
  *
@@ -61,37 +101,39 @@ export async function handleFile(nodeDir: string, nodeName: string, logger: Logg
  * @returns {Promise<void>} A promise that resolves when the extraction is complete, or rejects if an error occurs.
  */
 const extract = async (filePath: string): Promise<void> => {
-    return new Promise<void>(async (resolve, reject) => {
-        try {
-            const outputDir = path.dirname(filePath);
-            const readStream = fs.createReadStream(filePath);
-            const gunzip = zlib.createGunzip();
-            const extractStream = tar.extract({ cwd: outputDir });
+  return new Promise<void>(async (resolve, reject) => {
+    try {
+      const outputDir = path.dirname(filePath);
+      const readStream = fs.createReadStream(filePath);
+      const gunzip = zlib.createGunzip();
+      const extractStream = tar.extract({ cwd: outputDir });
 
-            // Pipe streams
-            readStream.pipe(gunzip).pipe(extractStream);
+      // Pipe streams
+      readStream.pipe(gunzip).pipe(extractStream);
 
-            // Handle potential errors.
-            readStream.on('error', (err) => {
-                reject(`An error occurred while reading the file: ${err}`);
-            });
+      // Handle potential errors.
+      readStream.on('error', (err) => {
+        reject(`An error occurred while reading the file: ${err}`);
+      });
 
-            gunzip.on('error', (err) => {
-                reject(`An error occurred while gunzipping the file: ${err}`);
-            });
+      gunzip.on('error', (err) => {
+        reject(`An error occurred while gunzipping the file: ${err}`);
+      });
 
-            extractStream.on('error', (err) => {
-                reject(`An error occurred during extraction: ${err}`);
-            });
+      extractStream.on('error', (err) => {
+        reject(`An error occurred during extraction: ${err}`);
+      });
 
-            // Close the streams and resolve the promise when extraction is done.
-            extractStream.on('finish', () => {
-                readStream.close();
-                gunzip.end();
-                resolve();
-            });
-        } catch (err) {
-            reject(`An unexpected error occurred during the extraction process: ${err}`);
-        }
-    });
+      // Close the streams and resolve the promise when extraction is done.
+      extractStream.on('finish', () => {
+        readStream.close();
+        gunzip.end();
+        resolve();
+      });
+    } catch (err) {
+      reject(
+        `An unexpected error occurred during the extraction process: ${err}`,
+      );
+    }
+  });
 };
