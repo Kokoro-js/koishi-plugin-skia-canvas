@@ -240,90 +240,43 @@ async function getNativeBinding(nodeDir: string) {
   const { platform, arch } = process;
   let nativeBinding: any;
   let nodeName: string;
-  switch (platform) {
-    case 'android':
-      switch (arch) {
-        case 'arm64':
-          nodeName = 'skia.android-arm64';
-          break;
-        case 'arm':
-          nodeName = 'skia.android-arm-eabi';
-          break;
-        default:
-          throw new UnsupportedError(
-            `Unsupported architecture on Android ${arch}`,
-          );
-      }
-      break;
-    case 'win32':
-      switch (arch) {
-        case 'x64':
-          nodeName = 'skia.win32-x64-msvc';
-          break;
-        case 'ia32':
-          nodeName = 'skia.win32-ia32-msvc';
-          break;
-        case 'arm64':
-          nodeName = 'skia.win32-arm64-msvc';
-          break;
-        default:
-          throw new UnsupportedError(
-            `Unsupported architecture on Windows: ${arch}`,
-          );
-      }
-      break;
-    case 'darwin':
-      switch (arch) {
-        case 'x64':
-          nodeName = 'skia.darwin-x64';
-          break;
-        case 'arm64':
-          nodeName = 'skia.darwin-arm64';
-          break;
-        default:
-          throw new UnsupportedError(
-            `Unsupported architecture on macOS: ${arch}`,
-          );
-      }
-      break;
-    case 'freebsd':
-      if (arch !== 'x64') {
-        throw new UnsupportedError(
-          `Unsupported architecture on FreeBSD: ${arch}`,
-        );
-      }
-      nodeName = 'skia.freebsd-x64';
-      break;
-    case 'linux':
-      switch (arch) {
-        case 'x64':
-          if (isMusl()) {
-            nodeName = 'skia.linux-x64-musl';
-          } else {
-            nodeName = 'skia.linux-x64-gnu';
-          }
-          break;
-        case 'arm64':
-          if (isMusl()) {
-            nodeName = 'skia.linux-arm64-musl';
-          } else {
-            nodeName = 'skia.linux-arm64-gnu';
-          }
-          break;
-        case 'arm':
-          nodeName = 'skia.linux-arm-gnueabihf';
-          break;
-        default:
-          throw new UnsupportedError(
-            `Unsupported architecture on Linux: ${arch}`,
-          );
-      }
-      break;
-    default:
-      throw new UnsupportedError(
-        `Unsupported OS: ${platform}, architecture: ${arch}`,
-      );
+
+  const platformArchMap = {
+    android: {
+      arm64: 'skia.android-arm64',
+      arm: 'skia.android-arm-eabi',
+    },
+    win32: {
+      x64: 'skia.win32-x64-msvc',
+      ia32: 'skia.win32-ia32-msvc',
+      arm64: 'skia.win32-arm64-msvc',
+    },
+    darwin: {
+      x64: 'skia.darwin-x64',
+      arm64: 'skia.darwin-arm64',
+    },
+    freebsd: {
+      x64: 'skia.freebsd-x64',
+    },
+    linux: {
+      x64: isMusl() ? 'skia.linux-x64-musl' : 'skia.linux-x64-gnu',
+      arm64: isMusl() ? 'skia.linux-arm64-musl' : 'skia.linux-arm64-gnu',
+      arm: 'skia.linux-arm-gnueabihf',
+    },
+  };
+  if (!platformArchMap[platform]) {
+    throw new UnsupportedError(
+      `Unsupported OS: ${platform}, architecture: ${arch}`,
+    );
   }
+  if (!platformArchMap[platform][arch]) {
+    throw new UnsupportedError(
+      `Unsupported architecture on ${platform}: ${arch}`,
+    );
+  }
+
+  nodeName = platformArchMap[platform][arch];
+
   const nodeFile = nodeName + '.node';
   const nodePath = path.join(nodeDir, 'package', nodeFile);
   const localFileExisted = fs.existsSync(nodePath);
