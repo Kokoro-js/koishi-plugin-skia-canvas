@@ -3,16 +3,10 @@ import path from 'path';
 import { mkdir } from 'fs/promises';
 import fs from 'fs';
 import { handleFile, DownloadError, downloadFonts } from './downloader';
-
 import type {
-  FillType,
   Canvas as NativeCanvas,
   Path2D,
   ImageData,
-  PathOp,
-  StrokeCap,
-  StrokeJoin,
-  SvgExportFlag,
   SvgCanvas,
   Image,
   LoadImageOptions,
@@ -55,11 +49,6 @@ export class Canvas extends Service {
   Path2D: Path2D;
   ImageData: ImageData;
   Image: Image;
-  PathOp: PathOp;
-  FillType: FillType;
-  StrokeCap: StrokeCap;
-  StrokeJoin: StrokeJoin;
-  SvgExportFlag: SvgExportFlag;
   GlobalFonts: IGlobalFonts;
 
   DOMPoint: DOMPoint;
@@ -144,11 +133,6 @@ export class Canvas extends Service {
       Path2D: this.Path2D,
       ImageData: this.ImageData,
       Image: this.Image,
-      PathOp: this.PathOp,
-      FillType: this.FillType,
-      StrokeCap: this.StrokeCap,
-      StrokeJoin: this.StrokeJoin,
-      SvgExportFlag: this.SvgExportFlag,
       GlobalFonts: this.GlobalFonts,
       convertSVGTextToPath: this.convertSVGTextToPath,
       DOMPoint: this.DOMPoint,
@@ -321,3 +305,49 @@ class UnsupportedError extends Error {
     this.name = 'UnsupportedError';
   }
 }
+
+export enum FillType {
+  Winding = 0,
+  EvenOdd = 1,
+  InverseWinding = 2,
+  InverseEvenOdd = 3,
+}
+
+export enum StrokeJoin {
+  Miter = 0,
+  Round = 1,
+  Bevel = 2,
+}
+
+export enum StrokeCap {
+  Butt = 0,
+  Round = 1,
+  Square = 2,
+}
+
+export enum SvgExportFlag {
+  ConvertTextToPaths = 0x01,
+  NoPrettyXML = 0x02,
+  RelativePathEncoding = 0x04,
+}
+
+export enum PathOp {
+  Difference = 0, // subtract the op path from the first path
+  Intersect = 1, // intersect the two paths
+  Union = 2, // union (inclusive-or) the two paths
+  Xor = 3, // exclusive-or the two paths
+  ReverseDifference = 4, // subtract the first path from the op path
+}
+
+export type {
+  NativeCanvas,
+  Path2D,
+  ImageData,
+  SvgCanvas,
+  Image,
+  LoadImageOptions,
+  IGlobalFonts,
+  DOMRect,
+  DOMMatrix,
+  DOMPoint,
+};
