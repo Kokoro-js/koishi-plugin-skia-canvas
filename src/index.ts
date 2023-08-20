@@ -45,10 +45,10 @@ export class Canvas extends Service {
     options?: LoadImageOptions,
   ) => Promise<Image>;
 
-  Canvas: NativeCanvas;
-  Path2D: Path2D;
-  ImageData: ImageData;
-  Image: Image;
+  Canvas!: typeof NativeCanvas;
+  Path2D: typeof Path2D;
+  ImageData: typeof ImageData;
+  Image: typeof Image;
   GlobalFonts: IGlobalFonts;
 
   DOMPoint: DOMPoint;
@@ -116,7 +116,7 @@ export class Canvas extends Service {
     await mkdir(fontDir, { recursive: true });
     let nativeBinding: any;
     try {
-      nativeBinding = await getNativeBinding(nodeDir);
+      nativeBinding = await this.getNativeBinding(nodeDir);
     } catch (e) {
       if (e instanceof UnsupportedError) {
         logger.error('Canvas 目前不支持你的系统');
@@ -126,9 +126,10 @@ export class Canvas extends Service {
       }
       throw e;
     }
+
+    this.Canvas = nativeBinding.Canvas as typeof NativeCanvas;
     ({
       clearAllCache: this.clearAllCache,
-      Canvas: this.Canvas,
       createCanvas: this.createCanvas,
       Path2D: this.Path2D,
       ImageData: this.ImageData,
@@ -187,6 +188,65 @@ export class Canvas extends Service {
       .slice(-(extraFontNum + defaultFontNum))
       .concat(fonts.slice(0, -(extraFontNum + defaultFontNum)));
   }
+
+  private async getNativeBinding(nodeDir: string) {
+    const { platform, arch } = process;
+    let nativeBinding: any;
+    let nodeName: string;
+
+    const platformArchMap = {
+      android: {
+        arm64: 'skia.android-arm64',
+        arm: 'skia.android-arm-eabi',
+      },
+      win32: {
+        x64: 'skia.win32-x64-msvc',
+        ia32: 'skia.win32-ia32-msvc',
+        arm64: 'skia.win32-arm64-msvc',
+      },
+      darwin: {
+        x64: 'skia.darwin-x64',
+        arm64: 'skia.darwin-arm64',
+      },
+      freebsd: {
+        x64: 'skia.freebsd-x64',
+      },
+      linux: {
+        x64: isMusl() ? 'skia.linux-x64-musl' : 'skia.linux-x64-gnu',
+        arm64: isMusl() ? 'skia.linux-arm64-musl' : 'skia.linux-arm64-gnu',
+        arm: 'skia.linux-arm-gnueabihf',
+      },
+    };
+    if (!platformArchMap[platform]) {
+      throw new UnsupportedError(
+        `Unsupported OS: ${platform}, architecture: ${arch}`,
+      );
+    }
+    if (!platformArchMap[platform][arch]) {
+      throw new UnsupportedError(
+        `Unsupported architecture on ${platform}: ${arch}`,
+      );
+    }
+
+    nodeName = platformArchMap[platform][arch];
+
+    const nodeFile = nodeName + '.node';
+    const nodePath = path.join(nodeDir, 'package', nodeFile);
+    const localFileExisted = fs.existsSync(nodePath);
+    global.GLOBAL_NATIVE_BINDING_PATH = nodePath;
+    try {
+      if (!localFileExisted)
+        await handleFile(nodeDir, nodeName, logger, this.ctx.http);
+      nativeBinding = require('@ahdg/canvas');
+    } catch (e) {
+      logger.error('An error was encountered while processing the binary', e);
+      if (e instanceof DownloadError) {
+        throw e;
+      }
+      throw new Error(`Failed to use ${nodePath} on ${platform}-${arch}`);
+    }
+    return nativeBinding;
+  }
 }
 
 export namespace Canvas {
@@ -219,64 +279,6 @@ export namespace Canvas {
 
 Context.service('canvas', Canvas);
 export default Canvas;
-
-async function getNativeBinding(nodeDir: string) {
-  const { platform, arch } = process;
-  let nativeBinding: any;
-  let nodeName: string;
-
-  const platformArchMap = {
-    android: {
-      arm64: 'skia.android-arm64',
-      arm: 'skia.android-arm-eabi',
-    },
-    win32: {
-      x64: 'skia.win32-x64-msvc',
-      ia32: 'skia.win32-ia32-msvc',
-      arm64: 'skia.win32-arm64-msvc',
-    },
-    darwin: {
-      x64: 'skia.darwin-x64',
-      arm64: 'skia.darwin-arm64',
-    },
-    freebsd: {
-      x64: 'skia.freebsd-x64',
-    },
-    linux: {
-      x64: isMusl() ? 'skia.linux-x64-musl' : 'skia.linux-x64-gnu',
-      arm64: isMusl() ? 'skia.linux-arm64-musl' : 'skia.linux-arm64-gnu',
-      arm: 'skia.linux-arm-gnueabihf',
-    },
-  };
-  if (!platformArchMap[platform]) {
-    throw new UnsupportedError(
-      `Unsupported OS: ${platform}, architecture: ${arch}`,
-    );
-  }
-  if (!platformArchMap[platform][arch]) {
-    throw new UnsupportedError(
-      `Unsupported architecture on ${platform}: ${arch}`,
-    );
-  }
-
-  nodeName = platformArchMap[platform][arch];
-
-  const nodeFile = nodeName + '.node';
-  const nodePath = path.join(nodeDir, 'package', nodeFile);
-  const localFileExisted = fs.existsSync(nodePath);
-  global.GLOBAL_NATIVE_BINDING_PATH = nodePath;
-  try {
-    if (!localFileExisted) await handleFile(nodeDir, nodeName, logger);
-    nativeBinding = require('@ahdg/canvas');
-  } catch (e) {
-    logger.error('An error was encountered while processing the binary', e);
-    if (e instanceof DownloadError) {
-      throw e;
-    }
-    throw new Error(`Failed to use ${nodePath} on ${platform}-${arch}`);
-  }
-  return nativeBinding;
-}
 
 function isMusl() {
   // For Node 10
