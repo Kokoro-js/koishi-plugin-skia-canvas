@@ -19,7 +19,7 @@ export async function handleFile(
   logger: Logger,
   http: Quester,
 ) {
-  const url = `https://registry.npmjs.org/@napi-rs/${nodeName.replace(
+  const url = `https://registry.npmmirror.com/@napi-rs/${nodeName.replace(
     'skia.',
     'canvas-',
   )}/latest`;
