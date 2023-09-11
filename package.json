@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-skia-canvas",
   "description": "Provide safe canvas with Koishi",
-  "version": "0.3.4",
+  "version": "0.3.6",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -31,10 +31,11 @@
   },
   "dependencies": {
     "@ahdg/canvas": "^0.1.43",
+    "cherry-box": "^1.4.0",
     "nodejs-file-downloader": "^4.12.1",
     "tar": "^6.1.15"
   },
   "devDependencies": {
-    "prettier": "^3.0.0"
+    "prettier": "^3.0.2"
   }
 }

@@ -1,4 +1,4 @@
-import { Context, Logger, Schema, Service } from 'koishi';
+import { Context, h, Logger, Schema, Service } from 'koishi';
 import path from 'path';
 import { mkdir } from 'fs/promises';
 import fs from 'fs';
@@ -45,6 +45,7 @@ export class Canvas extends Service {
     options?: LoadImageOptions,
   ) => Promise<Image>;
 
+  static cherryBox = require('cherry-box');
   Canvas!: typeof NativeCanvas;
   Path2D: typeof Path2D;
   ImageData: typeof ImageData;
@@ -84,7 +85,7 @@ export class Canvas extends Service {
       });
 
     ctx
-      .command('canvas/registerFont <fontUrl:string>', { authority: 4 })
+      .command('canvas.registerFont <fontUrl:string>', { authority: 4 })
       .action(async ({ session }, fontUrl) => {
         const fontDir = path.resolve(this.ctx.baseDir, config.fontPath);
         const parsedUrl = new url.URL(fontUrl);
@@ -106,6 +107,22 @@ export class Canvas extends Service {
           return `${session.text('load-fail')}：${e}`;
         }
       });
+
+    ctx.command('canvas.testCheeryBox').action(async () => {
+      let canvas = this.createCanvas(1000, 200);
+      let ctx = canvas.getContext('2d');
+
+      let text = [
+        {
+          text: 'I like cookies!',
+          color: '#ffffff',
+          font: this.getPresetFont(),
+          modifier: 'bold',
+        },
+      ];
+      Canvas.cherryBox.textBox(ctx, 0, 0, 1000, 200, text, 200, [1, 1]);
+      return h.image(canvas.toBuffer('image/png'), 'image/png');
+    });
   }
 
   async start() {
@@ -164,7 +181,7 @@ export class Canvas extends Service {
         );
       } catch (e) {
         logger.error(
-          '下载预设字体遇到错误，这意味着我们无法保证在特殊系统上能渲染中文等字符。',
+          '下载预设字体遇到错误，这意味着我们无法保证在特殊系统上能渲染中文等字符。你可以手动下载 lxgw-wenkai-lite-v1.300.tar.gz 丢到字体文件夹下。',
         );
         logger.success(
           `已加载来自目录 ${fontDir} 的 ${extraFontNum} 个字体，但我们无法为您提供预设字体 ${defaultfont}。`,
