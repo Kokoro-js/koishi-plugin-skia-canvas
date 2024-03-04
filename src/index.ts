@@ -3,23 +3,12 @@ import path from 'path';
 import { mkdir } from 'fs/promises';
 import fs from 'fs';
 import { handleFile, DownloadError, downloadFonts } from './downloader';
-import type {
-  Canvas as NativeCanvas,
-  Path2D,
-  ImageData,
-  SvgCanvas,
-  Image,
-  LoadImageOptions,
-  IGlobalFonts,
-  DOMRect,
-  DOMMatrix,
-  DOMPoint,
-} from '@ahdg/canvas';
+import type skia from '@ahdg/canvas';
+export type { skia }
 
 import * as url from 'url';
 
 export const name = 'canvas';
-const logger = new Logger(name);
 
 declare module 'koishi' {
   interface Context {
@@ -28,8 +17,8 @@ declare module 'koishi' {
 }
 export class Canvas extends Service {
   createCanvas: {
-    (width: number, height: number): NativeCanvas;
-    (width: number, height: number, svgExportFlag: SvgExportFlag): SvgCanvas;
+    (width: number, height: number): skia.Canvas;
+    (width: number, height: number, svgExportFlag: SvgExportFlag): skia.SvgCanvas;
   };
   clearAllCache: () => void;
   convertSVGTextToPath: (svg: Buffer | string) => Buffer;
@@ -40,21 +29,21 @@ export class Canvas extends Service {
       | Buffer
       | ArrayBufferLike
       | Uint8Array
-      | Image
+      | skia.Image
       | import('stream').Readable,
-    options?: LoadImageOptions,
-  ) => Promise<Image>;
+    options?: skia.LoadImageOptions,
+  ) => Promise<skia.Image>;
 
   static cherryBox = require('cherry-box');
-  Canvas!: typeof NativeCanvas;
-  Path2D: typeof Path2D;
-  ImageData: typeof ImageData;
-  Image: typeof Image;
-  GlobalFonts: IGlobalFonts;
+  Canvas!: typeof skia.Canvas;
+  Path2D: typeof skia.Path2D;
+  ImageData: typeof skia.ImageData;
+  Image: typeof skia.Image;
+  GlobalFonts: skia.IGlobalFonts;
 
-  DOMPoint: DOMPoint;
-  DOMMatrix: DOMMatrix;
-  DOMRect: DOMRect;
+  DOMPoint: skia.DOMPoint;
+  DOMMatrix: skia.DOMMatrix;
+  DOMRect: skia.DOMRect;
 
   private fontsArray: string[];
   private presetFont: string;
@@ -95,7 +84,7 @@ export class Canvas extends Service {
         }
 
         try {
-          await downloadFonts(fontDir, fontUrl, logger);
+          await downloadFonts(fontDir, fontUrl, this.logger);
           this.GlobalFonts.registerFromPath(fontDir);
           const loadedFonts = this.GlobalFonts.families.map(
             (obj) => obj.family,
@@ -125,6 +114,11 @@ export class Canvas extends Service {
     });
   }
 
+  // @ts-ignore
+  get logger(): Logger {
+    return this.ctx.logger(name)
+  }
+
   async start() {
     let { nodeBinaryPath, fontPath } = this.config;
     const nodeDir = path.resolve(this.ctx.baseDir, nodeBinaryPath);
@@ -136,15 +130,15 @@ export class Canvas extends Service {
       nativeBinding = await this.getNativeBinding(nodeDir);
     } catch (e) {
       if (e instanceof UnsupportedError) {
-        logger.error('Canvas 目前不支持你的系统');
+        this.logger.error('Canvas 目前不支持你的系统');
       }
       if (e instanceof DownloadError) {
-        logger.error('下载二进制文件遇到错误，请查看日志获取更详细信息');
+        this.logger.error('下载二进制文件遇到错误，请查看日志获取更详细信息');
       }
       throw e;
     }
 
-    this.Canvas = nativeBinding.Canvas as typeof NativeCanvas;
+    this.Canvas = nativeBinding.Canvas;
     ({
       clearAllCache: this.clearAllCache,
       createCanvas: this.createCanvas,
@@ -159,31 +153,31 @@ export class Canvas extends Service {
       loadImage: this.loadImage,
     } = nativeBinding);
 
-    logger.success('Canvas 加载成功');
+    this.logger.success('Canvas 加载成功');
 
     this.fontsArray = this.GlobalFonts.families.map((obj) => obj.family);
 
     this.loadExtraFonts(fontDir).catch((e) =>
-      logger.error('加载额外字体遇到了错误', e),
+      this.logger.error('加载额外字体遇到了错误', e),
     );
   }
 
   private async loadExtraFonts(fontDir: string) {
     const extraFontNum = this.GlobalFonts.loadFontsFromDir(fontDir);
 
-    const defaultfont = 'lxgw-wenkai-lite-v1.300';
+    const defaultfont = 'lxgw-wenkai-lite-v1.320';
     if (!fs.existsSync(path.join(fontDir, `${defaultfont}.tar.gz`))) {
       try {
         await downloadFonts(
           fontDir,
-          'http://file.tartaros.fun/files/64cb5229d636e/lxgw-wenkai-lite-v1.300.tar.gz',
-          logger,
+          'http://file.tartaros.fun/files/65e5c515b2d26/lxgw-wenkai-lite-v1.320.tar.gz',
+          this.logger,
         );
       } catch (e) {
-        logger.error(
-          '下载预设字体遇到错误，这意味着我们无法保证在特殊系统上能渲染中文等字符。你可以手动下载 lxgw-wenkai-lite-v1.300.tar.gz 丢到字体文件夹下。',
+        this.logger.error(
+          '下载预设字体遇到错误，这意味着我们无法保证在特殊系统上能渲染中文等字符。你可以手动下载 lxgw-wenkai-lite-v1.320.tar.gz 丢到字体文件夹下。',
         );
-        logger.success(
+        this.logger.success(
           `已加载来自目录 ${fontDir} 的 ${extraFontNum} 个字体，但我们无法为您提供预设字体 ${defaultfont}。`,
         );
         return;
@@ -194,7 +188,7 @@ export class Canvas extends Service {
       path.join(fontDir, defaultfont),
     );
 
-    logger.success(
+    this.logger.success(
       `已加载来自目录 ${fontDir} 的 ${extraFontNum} 个字体，其中预载了 ${defaultfont} 的 ${defaultFontNum} 个字体。`,
     );
 
@@ -253,10 +247,10 @@ export class Canvas extends Service {
     global.GLOBAL_NATIVE_BINDING_PATH = nodePath;
     try {
       if (!localFileExisted)
-        await handleFile(nodeDir, nodeName, logger, this.ctx.http);
+        await handleFile(nodeDir, nodeName, this.logger, this.ctx.http);
       nativeBinding = require('@ahdg/canvas');
     } catch (e) {
-      logger.error('An error was encountered while processing the binary', e);
+      this.logger.error('An error was encountered while processing the binary', e);
       if (e instanceof DownloadError) {
         throw e;
       }
@@ -294,7 +288,6 @@ export namespace Canvas {
   ]) as Schema<Config>;
 }
 
-Context.service('canvas', Canvas);
 export default Canvas;
 
 function isMusl() {
@@ -357,16 +350,3 @@ export enum PathOp {
   Xor = 3, // exclusive-or the two paths
   ReverseDifference = 4, // subtract the first path from the op path
 }
-
-export type {
-  NativeCanvas,
-  Path2D,
-  ImageData,
-  SvgCanvas,
-  Image,
-  LoadImageOptions,
-  IGlobalFonts,
-  DOMRect,
-  DOMMatrix,
-  DOMPoint,
-};
