@@ -33,7 +33,7 @@
     "@ahdg/canvas": "0.1.51-koishi",
     "cherry-box": "^1.4.0",
     "nodejs-file-downloader": "^4.12.1",
-    "tar": "^6.2.0"
+    "fflate": "^0.8.2"
   },
   "devDependencies": {
     "prettier": "^3.2.5"

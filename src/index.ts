@@ -4,7 +4,7 @@ import { mkdir } from 'fs/promises';
 import fs from 'fs';
 import { handleFile, DownloadError, downloadFonts } from './downloader';
 import type skia from '@ahdg/canvas';
-export type { skia }
+export type { skia };
 
 import * as url from 'url';
 
@@ -18,7 +18,11 @@ declare module 'koishi' {
 export class Canvas extends Service {
   createCanvas: {
     (width: number, height: number): skia.Canvas;
-    (width: number, height: number, svgExportFlag: SvgExportFlag): skia.SvgCanvas;
+    (
+      width: number,
+      height: number,
+      svgExportFlag: SvgExportFlag,
+    ): skia.SvgCanvas;
   };
   clearAllCache: () => void;
   convertSVGTextToPath: (svg: Buffer | string) => Buffer;
@@ -62,6 +66,7 @@ export class Canvas extends Service {
   ) {
     super(ctx, 'canvas');
 
+    this.presetFont = config.defaultFont;
     ctx.i18n.define('zh', require('./locales/zh-CN'));
     ctx
       .command('canvas')
@@ -71,30 +76,6 @@ export class Canvas extends Service {
           this.fontsArray = this.GlobalFonts.families.map((obj) => obj.family);
         }
         return session.text('.loaded-fonts') + this.fontsArray.join(', ');
-      });
-
-    ctx
-      .command('canvas.registerFont <fontUrl:string>', { authority: 4 })
-      .action(async ({ session }, fontUrl) => {
-        const fontDir = path.resolve(this.ctx.baseDir, config.fontPath);
-        const parsedUrl = new url.URL(fontUrl);
-        const endings = ['.otf', '.ttf', '.tgz', 'tar.gz'];
-        if (!endings.some((ending) => parsedUrl.pathname.endsWith(ending))) {
-          return session.text('.not-downloadable-type');
-        }
-
-        try {
-          await downloadFonts(fontDir, fontUrl, this.logger);
-          this.GlobalFonts.registerFromPath(fontDir);
-          const loadedFonts = this.GlobalFonts.families.map(
-            (obj) => obj.family,
-          );
-          this.fontsArray.unshift(loadedFonts[loadedFonts.length - 1]);
-        } catch (e) {
-          if (e instanceof DownloadError)
-            return `${session.text('download-fail')}：${e}`;
-          return `${session.text('load-fail')}：${e}`;
-        }
       });
 
     ctx.command('canvas.testCheeryBox').action(async () => {
@@ -116,7 +97,7 @@ export class Canvas extends Service {
 
   // @ts-ignore
   get logger(): Logger {
-    return this.ctx.logger(name)
+    return this.ctx?.logger(name) || new Logger(name);
   }
 
   async start() {
@@ -170,7 +151,7 @@ export class Canvas extends Service {
       try {
         await downloadFonts(
           fontDir,
-          'http://file.tartaros.fun/files/65e5c515b2d26/lxgw-wenkai-lite-v1.320.tar.gz',
+          'https://file.kylics.org/files/65e5c515b2d26/lxgw-wenkai-lite-v1.320.tar.gz',
           this.logger,
         );
       } catch (e) {
@@ -191,8 +172,6 @@ export class Canvas extends Service {
     this.logger.success(
       `已加载来自目录 ${fontDir} 的 ${extraFontNum} 个字体，其中预载了 ${defaultfont} 的 ${defaultFontNum} 个字体。`,
     );
-
-    this.presetFont = 'LXGW WenKai Lite';
     // 把额外加载的字体提前
     const fonts = this.GlobalFonts.families.map((obj) => obj.family);
     this.fontsArray = fonts
@@ -250,7 +229,10 @@ export class Canvas extends Service {
         await handleFile(nodeDir, nodeName, this.logger, this.ctx.http);
       nativeBinding = require('@ahdg/canvas');
     } catch (e) {
-      this.logger.error('An error was encountered while processing the binary', e);
+      this.logger.error(
+        'An error was encountered while processing the binary',
+        e,
+      );
       if (e instanceof DownloadError) {
         throw e;
       }
@@ -264,6 +246,7 @@ export namespace Canvas {
   export interface Config {
     nodeBinaryPath: string;
     fontPath: string;
+    defaultFont: string;
   }
   export const Config = Schema.intersect([
     Schema.object({
@@ -279,10 +262,12 @@ export namespace Canvas {
       })
         .description('Canvas custom font storage directory')
         .default('node-rs/canvas/font'),
+      defaultFont: Schema.string().default('LXGW WenKai Lite').required(),
     }).i18n({
       zh: {
         nodeBinaryPath: 'Canvas 自定义字体存放目录',
         fontPath: 'Canvas 自定义字体存放目录',
+        defaultFont: '通过指令 canvas 查看可以使用的字体并填写在此处。',
       },
     }),
   ]) as Schema<Config>;

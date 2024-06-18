@@ -1,10 +1,8 @@
 // downloader.ts
 import Downloader from 'nodejs-file-downloader';
-import tar from 'tar';
-import zlib from 'zlib';
-import fs from 'fs';
 import path from 'path';
 import { Logger, Quester } from 'koishi';
+import { extractTarGz, extractZip } from './helper';
 
 export class DownloadError extends Error {
   constructor(message: string) {
@@ -48,18 +46,12 @@ export async function handleFile(
       );
     },
   });
-  try {
-    const { filePath, downloadStatus } = await downloader.download();
-    if (downloadStatus === 'COMPLETE') {
-      await extract(path.resolve(filePath));
-      logger.success(`File downloaded successfully at ${filePath}`);
-    } else {
-      throw new DownloadError('Download was aborted');
-    }
-  } catch (e) {
-    logger.error('Failed to download the file', e);
-    throw new DownloadError(`Failed to download the binary file: ${e.message}`);
-  }
+
+  const { filePath, downloadStatus } = await downloader.download();
+  if (downloadStatus !== 'COMPLETE')
+    throw new DownloadError('Download was aborted');
+  await extractTarGz(path.resolve(filePath));
+  logger.success(`File downloaded successfully at ${filePath}`);
 }
 
 export async function downloadFonts(
@@ -82,62 +74,14 @@ export async function downloadFonts(
     },
   });
 
-  try {
-    const { filePath, downloadStatus } = await downloadFontTask.download();
-    if (downloadStatus === 'COMPLETE') {
-      if (filePath.endsWith('tar.gz') || filePath.endsWith('tgz')) {
-        await extract(path.resolve(filePath));
-      }
-      logger.success(`File downloaded successfully at ${filePath}`);
-    } else {
-      throw new DownloadError('Download was aborted');
-    }
-  } catch (e) {
-    logger.error('Failed to download the file', e);
-    throw new DownloadError(`Failed to download the font: ${e.message}`);
+  const { filePath, downloadStatus } = await downloadFontTask.download();
+  if (downloadStatus !== 'COMPLETE')
+    throw new DownloadError('Download was aborted');
+  if (filePath.endsWith('tar.gz') || filePath.endsWith('tgz')) {
+    await extractTarGz(path.resolve(filePath));
   }
+  if (filePath.endsWith('.zip')) {
+    await extractZip(path.resolve(filePath));
+  }
+  logger.success(`File downloaded successfully at ${filePath}`);
 }
-
-/**
- * Extracts a .tgz file downloaded from npm to the directory of the file.
- *
- * @param {string} filePath - The path of the .tgz file.
- * @returns {Promise<void>} A promise that resolves when the extraction is complete, or rejects if an error occurs.
- */
-const extract = async (filePath: string): Promise<void> => {
-  return new Promise<void>(async (resolve, reject) => {
-    try {
-      const outputDir = path.dirname(filePath);
-      const readStream = fs.createReadStream(filePath);
-      const gunzip = zlib.createGunzip();
-      const extractStream = tar.extract({ cwd: outputDir });
-
-      // Pipe streams
-      readStream.pipe(gunzip).pipe(extractStream);
-
-      // Handle potential errors.
-      readStream.on('error', (err) => {
-        reject(`An error occurred while reading the file: ${err}`);
-      });
-
-      gunzip.on('error', (err) => {
-        reject(`An error occurred while gunzipping the file: ${err}`);
-      });
-
-      extractStream.on('error', (err) => {
-        reject(`An error occurred during extraction: ${err}`);
-      });
-
-      // Close the streams and resolve the promise when extraction is done.
-      extractStream.on('finish', () => {
-        readStream.close();
-        gunzip.end();
-        resolve();
-      });
-    } catch (err) {
-      reject(
-        `An unexpected error occurred during the extraction process: ${err}`,
-      );
-    }
-  });
-};
