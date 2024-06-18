@@ -27,7 +27,7 @@
     "service"
   ],
   "peerDependencies": {
-    "koishi": "^4.17.0"
+    "koishi": "^4.15.0"
   },
   "dependencies": {
     "@ahdg/canvas": "0.1.51-koishi",
