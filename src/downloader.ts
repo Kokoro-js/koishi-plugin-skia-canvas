@@ -39,6 +39,7 @@ export async function handleFile(
   const downloader = new Downloader({
     url: tarballUrl,
     directory: nodeDir,
+    skipExistingFileName: true,
     onProgress: function (percentage, _chunk, remainingSize) {
       //Gets called with each chunk.
       logger.info(

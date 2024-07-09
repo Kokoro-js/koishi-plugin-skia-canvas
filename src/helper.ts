@@ -1,7 +1,18 @@
-import * as fs from "fs";
-import * as path from "path";
-import { gunzipSync, unzipSync } from "fflate";
-import tar from "tar-stream";
+import * as fs from 'fs';
+import * as path from 'path';
+import { gunzipSync, unzipSync } from 'fflate';
+import tar from 'tar-stream';
+
+/**
+ * Ensures that the directory exists. If the directory structure does not exist, it is created.
+ *
+ * @param {string} dir - The directory path.
+ */
+const ensureDirectoryExists = (dir: string) => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+};
 
 /**
  * Extracts a .tar.gz file to the directory of the file.
@@ -13,38 +24,53 @@ export const extractTarGz = async (filePath: string): Promise<void> => {
   return new Promise((resolve, reject) => {
     const outputDir = path.dirname(filePath);
 
-    // Read the .tar.gz file
-    const fileBuffer = fs.readFileSync(filePath);
+    try {
+      // Read the .tar.gz file
+      const fileBuffer = fs.readFileSync(filePath);
 
-    // Decompress the .tar.gz file
-    const decompressedBuffer = gunzipSync(fileBuffer);
+      // Decompress the .tar.gz file
+      const decompressedBuffer = gunzipSync(fileBuffer);
 
-    // Extract the TAR archive
-    const extract = tar.extract();
-    extract.on("entry", (header, stream, next) => {
-      const outputPath = path.join(outputDir, header.name);
-      if (header.type === "directory") {
-        fs.mkdirSync(outputPath, { recursive: true });
-        stream.on("end", next);
-        stream.resume();
-      } else if (header.type === "file") {
-        stream.pipe(fs.createWriteStream(outputPath));
-        stream.on("end", next);
-      } else {
-        stream.on("end", next);
-        stream.resume(); // handle other types (like symlinks) by ignoring the content
-      }
-    });
+      // Extract the TAR archive
+      const extract = tar.extract();
 
-    extract.on("finish", () => {
-      console.log(`Successfully extracted .tar.gz file to ${outputDir}`);
-      resolve();
-    });
+      extract.on('entry', (header, stream, next) => {
+        const outputPath = path.join(outputDir, header.name);
 
-    extract.on("error", reject);
+        if (header.type === 'directory') {
+          ensureDirectoryExists(outputPath);
+          stream.on('end', next);
+          stream.resume();
+        } else if (header.type === 'file') {
+          ensureDirectoryExists(path.dirname(outputPath));
+          const fileStream = fs.createWriteStream(outputPath);
+          stream.pipe(fileStream);
+          fileStream.on('finish', next);
+          fileStream.on('error', (err) => {
+            console.error(`File stream error for file: ${outputPath}`, err);
+            reject(err);
+          });
+        } else {
+          stream.on('end', next);
+          stream.resume();
+        }
+      });
 
-    // Feed the decompressed buffer into tar-stream
-    extract.end(decompressedBuffer);
+      extract.on('finish', () => {
+        resolve();
+      });
+
+      extract.on('error', (err) => {
+        console.error('Error during extraction:', err);
+        reject(err);
+      });
+
+      // Feed the decompressed buffer into tar-stream
+      extract.end(decompressedBuffer);
+    } catch (err) {
+      console.error('Error reading or decompressing file:', err);
+      reject(err);
+    }
   });
 };
 
@@ -64,7 +90,7 @@ export const extractZip = async (filePath: string): Promise<void> => {
   // Extract the .zip file
   for (const [fileName, file] of Object.entries(unzipped)) {
     const outputPath = path.join(outputDir, fileName);
-    if (fileName.endsWith("/")) {
+    if (fileName.endsWith('/')) {
       fs.mkdirSync(outputPath, { recursive: true });
     } else {
       fs.writeFileSync(outputPath, Buffer.from(file));
