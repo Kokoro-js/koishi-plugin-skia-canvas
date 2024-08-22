@@ -32,8 +32,8 @@
   "dependencies": {
     "@ahdg/canvas": "0.1.51-koishi",
     "cherry-box": "^1.4.0",
-    "nodejs-file-downloader": "^4.12.1",
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.2",
+    "nodejs-file-downloader": "^4.12.1"
   },
   "devDependencies": {
     "prettier": "^3.2.5"

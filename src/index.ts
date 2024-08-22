@@ -262,10 +262,10 @@ export namespace Canvas {
       })
         .description('Canvas custom font storage directory')
         .default('node-rs/canvas/font'),
-      defaultFont: Schema.string().default('LXGW WenKai Lite').required(),
+      defaultFont: Schema.string().default('LXGW WenKai Lite'),
     }).i18n({
       zh: {
-        nodeBinaryPath: 'Canvas 自定义字体存放目录',
+        nodeBinaryPath: 'Canvas 二进制存放目录',
         fontPath: 'Canvas 自定义字体存放目录',
         defaultFont: '通过指令 canvas 查看可以使用的字体并填写在此处。',
       },
@@ -276,23 +276,14 @@ export namespace Canvas {
 export default Canvas;
 
 function isMusl() {
-  // For Node 10
-  if (!process.report || typeof process.report.getReport !== 'function') {
-    try {
-      const lddPath = require('child_process')
-        .execSync('which ldd')
-        .toString()
-        .trim();
-      return fs.readFileSync(lddPath, 'utf8').includes('musl');
-    } catch (e) {
-      return true;
-    }
-  } else {
-    const report: { header: any } = process.report.getReport() as unknown as {
-      header: any;
-    };
-    const glibcVersionRuntime = report.header?.glibcVersionRuntime;
-    return !glibcVersionRuntime;
+  try {
+    const lddPath = require('child_process')
+      .execSync('which ldd')
+      .toString()
+      .trim();
+    return fs.readFileSync(lddPath, 'utf8').includes('musl');
+  } catch (e) {
+    return true;
   }
 }
 
