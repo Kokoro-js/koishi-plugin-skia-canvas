@@ -20,7 +20,7 @@ export async function handleFile(
   const url = `https://registry.npmmirror.com/@napi-rs/${nodeName.replace(
     'skia.',
     'canvas-',
-  )}/latest`;
+  )}/v0.1.53`;
 
   let tarballUrl: string | undefined;
 
